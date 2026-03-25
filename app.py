@@ -1,45 +1,112 @@
+from dotenv import load_dotenv
+load_dotenv()
+
+import os
 import streamlit as st
 
-st.title("サンプルアプリ②: 少し複雑なWebアプリ")
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
 
-st.write("##### 動作モード1: 文字数カウント")
-st.write("入力フォームにテキストを入力し、「実行」ボタンを押すことで文字数をカウントできます。")
-st.write("##### 動作モード2: BMI値の計算")
-st.write("身長と体重を入力することで、肥満度を表す体型指数のBMI値を算出できます。")
+# ----------------------------
+# 画面設定
+# ----------------------------
+st.set_page_config(page_title="専門家AI相談アプリ", page_icon="🤖")
+st.title("🤖 専門家AI相談アプリ")
 
-selected_item = st.radio(
-    "動作モードを選択してください。",
-    ["文字数カウント", "BMI値の計算"]
-)
+# ----------------------------
+# アプリ概要・操作方法の表示
+# ----------------------------
+st.markdown("""
+### アプリ概要
+このWebアプリでは、入力したテキストをLLMに渡して回答を取得できます。  
+さらに、ラジオボタンで選んだ専門家タイプに応じて、AIの振る舞いを切り替えます。
 
-st.divider()
+### 操作方法
+1. 専門家の種類を選択してください  
+2. 入力欄に質問や相談内容を入力してください  
+3. 「送信」ボタンを押してください  
+4. 回答結果が画面下に表示されます
+""")
 
-if selected_item == "文字数カウント":
-    input_message = st.text_input(label="文字数のカウント対象となるテキストを入力してください。")
-    text_count = len(input_message)
+# ----------------------------
+# LLMから回答を取得する関数
+# 引数:
+#   input_text: ユーザー入力
+#   expert_type: ラジオボタンの選択値
+# 戻り値:
+#   LLMの回答文字列
+# ----------------------------
+def get_llm_response(input_text: str, expert_type: str) -> str:
+    expert_prompts = {
+        "マーケティング専門家": (
+            "あなたはマーケティングの専門家です。"
+            "市場分析、ターゲット設定、販促施策、SNS運用、ブランディングの観点から、"
+            "わかりやすく実践的にアドバイスしてください。"
+        ),
+        "ITアーキテクト専門家": (
+            "あなたはITアーキテクトの専門家です。"
+            "システム設計、技術選定、保守性、拡張性、セキュリティの観点から、"
+            "わかりやすく具体的にアドバイスしてください。"
+        ),
+        "キャリア相談専門家": (
+            "あなたはキャリア相談の専門家です。"
+            "相談者の状況を整理し、選択肢・強み・次の一歩が明確になるように、"
+            "丁寧で前向きにアドバイスしてください。"
+        ),
+    }
 
-else:
-    height = st.text_input(label="身長（cm）を入力してください。")
-    weight = st.text_input(label="体重（kg）を入力してください。")
+    system_message = expert_prompts.get(
+        expert_type,
+        "あなたは親切で有能なアシスタントです。"
+    )
 
-if st.button("実行"):
-    st.divider()
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_message),
+        ("human", "{user_input}")
+    ])
 
-    if selected_item == "文字数カウント":
-        if input_message:
-            st.write(f"文字数: **{text_count}**")
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0.7
+    )
 
-        else:
-            st.error("カウント対象となるテキストを入力してから「実行」ボタンを押してください。")
+    chain = prompt | llm
+    response = chain.invoke({"user_input": input_text})
 
+    return response.content
+
+
+# ----------------------------
+# APIキー確認
+# ----------------------------
+if not os.getenv("OPENAI_API_KEY"):
+    st.warning("OPENAI_API_KEY が設定されていません。環境変数を設定してください。")
+
+# ----------------------------
+# 入力フォーム
+# ----------------------------
+with st.form("question_form"):
+    expert_type = st.radio(
+        "専門家の種類を選んでください",
+        ["マーケティング専門家", "ITアーキテクト専門家", "キャリア相談専門家"],
+        horizontal=True
+    )
+
+    input_text = st.text_input("入力テキスト", placeholder="例：新サービスの集客方法を考えてください")
+
+    submitted = st.form_submit_button("送信")
+
+# ----------------------------
+# 回答表示
+# ----------------------------
+if submitted:
+    if not input_text.strip():
+        st.error("入力テキストを入力してください。")
     else:
-        if height and weight:
+        with st.spinner("LLMが回答を生成中です..."):
             try:
-                bmi = round(int(weight) / ((int(height)/100) ** 2), 1)
-                st.write(f"BMI値: {bmi}")
-
-            except ValueError as e:
-                st.error("身長と体重は数値で入力してください。")
-
-        else:
-            st.error("身長と体重をどちらも入力してください。")
+                answer = get_llm_response(input_text, expert_type)
+                st.subheader("回答結果")
+                st.write(answer)
+            except Exception as e:
+                st.error(f"エラーが発生しました: {e}")
